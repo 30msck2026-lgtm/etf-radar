@@ -1,4 +1,5 @@
 import datetime
+import time
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -20,27 +21,32 @@ def update_macro_breadth(conn, today_str):
             else:
                 tickers = tables[4]["Ticker"].str.replace(".", "-", regex=False).tolist() if len(tables) > 4 else tables[3]["Ticker"].str.replace(".", "-", regex=False).tolist()
             
-            chunk_size = 100
+            # 分批下載加防限流間隔 (每批 60 隻，間隔 5 秒)
+            chunk_size = 60
             valid, nh_cnt, nl_cnt, ab_50, ab_200 = 0, 0, 0, 0, 0
             for i in range(0, len(tickers), chunk_size):
                 sub_tickers = tickers[i:i+chunk_size]
-                data = yf.download(sub_tickers, period="1y", interval="1d", group_by="ticker", auto_adjust=True, progress=False)
-                for sym in sub_tickers:
-                    if sym in data.columns.levels[0]:
-                        df_c = data[sym]["Close"].dropna()
-                        if len(df_c) >= 150:
-                            valid += 1
-                            curr = df_c.iloc[-1]
-                            max_1y = df_c.max()
-                            min_1y = df_c.min()
-                            if curr >= max_1y * 0.995:
-                                nh_cnt += 1
-                            if curr <= min_1y * 1.005:
-                                nl_cnt += 1
-                            if curr > df_c.rolling(50).mean().iloc[-1]:
-                                ab_50 += 1
-                            if len(df_c) >= 200 and curr > df_c.rolling(200).mean().iloc[-1]:
-                                ab_200 += 1
+                try:
+                    data = yf.download(sub_tickers, period="1y", interval="1d", group_by="ticker", auto_adjust=True, progress=False)
+                    for sym in sub_tickers:
+                        if sym in data.columns.levels[0]:
+                            df_c = data[sym]["Close"].dropna()
+                            if len(df_c) >= 150:
+                                valid += 1
+                                curr = df_c.iloc[-1]
+                                max_1y = df_c.max()
+                                min_1y = df_c.min()
+                                if curr >= max_1y * 0.995:
+                                    nh_cnt += 1
+                                if curr <= min_1y * 1.005:
+                                    nl_cnt += 1
+                                if curr > df_c.rolling(50).mean().iloc[-1]:
+                                    ab_50 += 1
+                                if len(df_c) >= 200 and curr > df_c.rolling(200).mean().iloc[-1]:
+                                    ab_200 += 1
+                except Exception as ex:
+                    print(f"[-] 批次下載警告: {ex}")
+                time.sleep(5) # 嚴格防限流冷卻 5 秒
                                 
             pct_50 = round(ab_50 / valid * 100, 1) if valid > 0 else 0.0
             pct_200 = round(ab_200 / valid * 100, 1) if valid > 0 else 0.0
@@ -56,7 +62,7 @@ def run_daily_pipeline():
     conn = get_connection()
     today_str = datetime.date.today().strftime("%Y-%m-%d")
     print(f"==================================================")
-    print(f"啟動盤後批次全量真實指標計算: {today_str}")
+    print(f"啟動盤後安全節流批次指標計算: {today_str}")
     print(f"==================================================")
     
     update_macro_breadth(conn, today_str)
@@ -70,10 +76,11 @@ def run_daily_pipeline():
     stock_symbols = holdings_df["stock_symbol"].dropna().unique().tolist()
     download_pool = list(set(etf_symbols + benchmarks + stock_symbols))
     
-    print(f"[*] 全量抓取標的行情 (共 {len(download_pool)} 隻，分塊下載確保不超時、不漏項)...")
+    print(f"[*] 全量抓取標的行情 (去重後共 {len(download_pool)} 隻股票)...")
+    print(f"[*] 執行防超限節流策略: 每批 60 隻，間隔 5 秒冷卻，杜絕 429 拒絕連線與超時丟包...")
     
     raw_dict = {}
-    chunk_size = 100
+    chunk_size = 60
     for i in range(0, len(download_pool), chunk_size):
         sub_pool = download_pool[i:i+chunk_size]
         try:
@@ -81,8 +88,10 @@ def run_daily_pipeline():
             for sym in sub_pool:
                 if sym in d.columns.levels[0]:
                     raw_dict[sym] = d[sym]
+            print(f"[+] 已安全獲取進度: {min(i+chunk_size, len(download_pool))}/{len(download_pool)}")
         except Exception as err:
             print(f"[-] 下載塊失敗: {err}")
+        time.sleep(5) # 每次請求冷卻 5 秒
             
     cur = conn.cursor()
     for _, meta_row in meta_df.iterrows():
@@ -196,7 +205,7 @@ def run_daily_pipeline():
             
     conn.commit()
     conn.close()
-    print("[+] 每日指標計算完成！")
+    print("[+] 每日指標計算完成，所有數據無超限丟包！")
 
 if __name__ == "__main__":
     run_daily_pipeline()

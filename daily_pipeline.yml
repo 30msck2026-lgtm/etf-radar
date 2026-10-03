@@ -2,8 +2,8 @@ name: Daily ETF Data Pipeline
 
 on:
   schedule:
-    # 星期一至五 UTC 21:00 (美股盤後收市結算)
-    - cron: '0 21 * * 1-5'
+    # 星期一至五 UTC 21:30 (美股盤後收市結算)
+    - cron: '30 21 * * 1-5'
   workflow_dispatch: # 支援在 GitHub 網頁上手動一鍵點擊執行
 
 jobs:
@@ -25,13 +25,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 建立數據目錄並初始化資料庫 (Init DB & Full Holdings)
+      - name: 建立數據目錄並初始化資料庫 (Init DB & Holdings)
         run: |
           mkdir -p data
           python db_manager.py
           python update_holdings.py
 
-      - name: 執行每日盤後大盤與細分行業計算 (Run Daily Batch)
+      - name: 執行每日盤後大盤與細分行業計算 (Run Daily Batch With Throttling)
         run: |
           python daily_batch.py
 
