@@ -50,7 +50,7 @@ df_metrics, df_macro, df_sectors, latest_date = load_dashboard_data()
 
 if df_metrics is None or df_metrics.empty:
     st.warning("⚠️ 資料庫初始化完成，但尚未存有任何計算數據！")
-    st.info("請前往 GitHub Actions 頁面點擊【Run workflow】以執行首次全量計算。")
+    st.info("請前往 GitHub Actions 頁面點擊【Run workflow】以執行全量計算。")
     st.stop()
 
 # ==========================================
@@ -125,7 +125,7 @@ st.markdown("---")
 # ==========================================
 st.markdown("## 🔬 B. 細分子行業篩選層 (Sub-Industry Screener)")
 
-# 側邊欄：標準美股 GICS 11 大板塊 (嚴格 11 個標準分類)
+# 側邊欄：嚴格鎖定美股標準 GICS 11 大板塊 (100% 完整，不遺漏任何一個)
 st.sidebar.header("🎯 複合條件篩選 (Screener Filters)")
 STANDARD_11_SECTORS = [
     "資訊科技", "通信服務", "非必需消費", "必需消費", "醫療保健",
@@ -232,8 +232,10 @@ if target_etf:
     conn.close()
     if not h_df.empty:
         st.write(f"**{target_etf}** 底層持股清單（已完整展示該 ETF 的全體 **{len(h_df)} 隻**成分股）：")
+        # 格式化顯示持股權重百分比或小數
+        formatted_h_df = h_df.rename(columns={"stock_symbol": "成分股代號", "weight": "持股權重", "updated_date": "持股更新日期"})
         st.dataframe(
-            h_df.rename(columns={"stock_symbol": "成分股代號", "weight": "持股權重", "updated_date": "持股更新日期"}),
+            formatted_h_df.style.format({"持股權重": "{:.4f}"}),
             use_container_width=True,
             height=350
         )

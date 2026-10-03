@@ -20,7 +20,6 @@ def update_macro_breadth(conn, today_str):
             else:
                 tickers = tables[4]["Ticker"].str.replace(".", "-", regex=False).tolist() if len(tables) > 4 else tables[3]["Ticker"].str.replace(".", "-", regex=False).tolist()
             
-            # 分批下載防止超時
             chunk_size = 100
             valid, nh_cnt, nl_cnt, ab_50, ab_200 = 0, 0, 0, 0, 0
             for i in range(0, len(tickers), chunk_size):
@@ -71,11 +70,10 @@ def run_daily_pipeline():
     stock_symbols = holdings_df["stock_symbol"].dropna().unique().tolist()
     download_pool = list(set(etf_symbols + benchmarks + stock_symbols))
     
-    print(f"[*] 全量抓取標的行情 (共 {len(download_pool)} 隻，分塊下載確保不漏掉)...")
+    print(f"[*] 全量抓取標的行情 (共 {len(download_pool)} 隻，分塊下載確保不超時、不漏項)...")
     
-    # 分塊批量下載 (每塊 120 隻，防止 Yahoo Finance 超時遺失數據)
     raw_dict = {}
-    chunk_size = 120
+    chunk_size = 100
     for i in range(0, len(download_pool), chunk_size):
         sub_pool = download_pool[i:i+chunk_size]
         try:

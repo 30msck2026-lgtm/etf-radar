@@ -25,7 +25,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 建立數據目錄並初始化資料庫 (Init DB & Full Holdings Seed)
+      - name: 建立數據目錄並初始化資料庫 (Init DB & Full Holdings)
         run: |
           mkdir -p data
           python db_manager.py
