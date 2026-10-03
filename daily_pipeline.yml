@@ -2,8 +2,10 @@ name: Daily ETF Data Pipeline
 
 on:
   schedule:
-    # 星期一至五 UTC 21:30 (美股盤後收市結算)
+    # 1. 每日排程: 星期一至五 UTC 21:30 (美股盤後 16:30 EST) 自動計算市場寬度指標
     - cron: '30 21 * * 1-5'
+    # 2. 每月排程: 每月 1 號 UTC 01:00 自動從各發行商官方網站同步最新成分股 CSV
+    - cron: '0 1 1 * *'
   workflow_dispatch: # 支援在 GitHub 網頁上手動一鍵點擊執行
 
 jobs:
@@ -25,13 +27,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 建立數據目錄並初始化資料庫 (Init DB & Holdings)
+      - name: 建立數據目錄並執行官方持股同步 (Sync Official Holdings CSV)
         run: |
           mkdir -p data
           python db_manager.py
           python update_holdings.py
 
-      - name: 執行每日盤後大盤與細分行業計算 (Run Daily Batch With Throttling)
+      - name: 執行每日盤後大盤與細分行業計算 (Run Daily Batch With Safe Throttling)
         run: |
           python daily_batch.py
 
@@ -40,5 +42,5 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add -f data/etf_system.db
-          git diff-index --quiet HEAD || git commit -m "自動更新: 盤後市場寬度與 ETF 指標 [$(date +'%Y-%m-%d')]"
+          git diff-index --quiet HEAD || git commit -m "自動更新: 發行商官方持股與盤後市場寬度 [$(date +'%Y-%m-%d')]"
           git push
