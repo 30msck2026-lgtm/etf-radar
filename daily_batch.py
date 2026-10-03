@@ -20,24 +20,29 @@ def update_macro_breadth(conn, today_str):
             else:
                 tickers = tables[4]["Ticker"].str.replace(".", "-", regex=False).tolist() if len(tables) > 4 else tables[3]["Ticker"].str.replace(".", "-", regex=False).tolist()
             
-            data = yf.download(tickers, period="1y", interval="1d", group_by="ticker", auto_adjust=True, progress=False)
-            nh_cnt, nl_cnt, ab_50, ab_200, valid = 0, 0, 0, 0, 0
-            for sym in tickers:
-                if sym in data.columns.levels[0]:
-                    df_c = data[sym]["Close"].dropna()
-                    if len(df_c) >= 200:
-                        valid += 1
-                        curr = df_c.iloc[-1]
-                        max_1y = df_c.max()
-                        min_1y = df_c.min()
-                        if curr >= max_1y * 0.995:
-                            nh_cnt += 1
-                        if curr <= min_1y * 1.005:
-                            nl_cnt += 1
-                        if curr > df_c.rolling(50).mean().iloc[-1]:
-                            ab_50 += 1
-                        if curr > df_c.rolling(200).mean().iloc[-1]:
-                            ab_200 += 1
+            # 分批下載防止超時
+            chunk_size = 100
+            valid, nh_cnt, nl_cnt, ab_50, ab_200 = 0, 0, 0, 0, 0
+            for i in range(0, len(tickers), chunk_size):
+                sub_tickers = tickers[i:i+chunk_size]
+                data = yf.download(sub_tickers, period="1y", interval="1d", group_by="ticker", auto_adjust=True, progress=False)
+                for sym in sub_tickers:
+                    if sym in data.columns.levels[0]:
+                        df_c = data[sym]["Close"].dropna()
+                        if len(df_c) >= 150:
+                            valid += 1
+                            curr = df_c.iloc[-1]
+                            max_1y = df_c.max()
+                            min_1y = df_c.min()
+                            if curr >= max_1y * 0.995:
+                                nh_cnt += 1
+                            if curr <= min_1y * 1.005:
+                                nl_cnt += 1
+                            if curr > df_c.rolling(50).mean().iloc[-1]:
+                                ab_50 += 1
+                            if len(df_c) >= 200 and curr > df_c.rolling(200).mean().iloc[-1]:
+                                ab_200 += 1
+                                
             pct_50 = round(ab_50 / valid * 100, 1) if valid > 0 else 0.0
             pct_200 = round(ab_200 / valid * 100, 1) if valid > 0 else 0.0
             net_hl = nh_cnt - nl_cnt
@@ -52,7 +57,7 @@ def run_daily_pipeline():
     conn = get_connection()
     today_str = datetime.date.today().strftime("%Y-%m-%d")
     print(f"==================================================")
-    print(f"啟動盤後批次指標計算: {today_str}")
+    print(f"啟動盤後批次全量真實指標計算: {today_str}")
     print(f"==================================================")
     
     update_macro_breadth(conn, today_str)
@@ -66,17 +71,29 @@ def run_daily_pipeline():
     stock_symbols = holdings_df["stock_symbol"].dropna().unique().tolist()
     download_pool = list(set(etf_symbols + benchmarks + stock_symbols))
     
-    print(f"[*] 批次拉取全量去重標的 ({len(download_pool)} 隻股票與 ETF 行情)...")
-    raw_data = yf.download(download_pool, period="15mo", interval="1d", group_by="ticker", auto_adjust=True, progress=False)
+    print(f"[*] 全量抓取標的行情 (共 {len(download_pool)} 隻，分塊下載確保不漏掉)...")
     
+    # 分塊批量下載 (每塊 120 隻，防止 Yahoo Finance 超時遺失數據)
+    raw_dict = {}
+    chunk_size = 120
+    for i in range(0, len(download_pool), chunk_size):
+        sub_pool = download_pool[i:i+chunk_size]
+        try:
+            d = yf.download(sub_pool, period="15mo", interval="1d", group_by="ticker", auto_adjust=True, progress=False)
+            for sym in sub_pool:
+                if sym in d.columns.levels[0]:
+                    raw_dict[sym] = d[sym]
+        except Exception as err:
+            print(f"[-] 下載塊失敗: {err}")
+            
     cur = conn.cursor()
     for _, meta_row in meta_df.iterrows():
         etf = meta_row["symbol"]
         bench = meta_row["benchmark"]
         try:
-            if etf not in raw_data.columns.levels[0]:
+            if etf not in raw_dict:
                 continue
-            hist = raw_data[etf]
+            hist = raw_dict[etf]
             close = hist["Close"].dropna()
             volume = hist["Volume"].dropna() if "Volume" in hist else None
             if len(close) < 25:
@@ -106,8 +123,8 @@ def run_daily_pipeline():
                 vol_ratio = round(float(v_curr / v_20ma), 2) if v_20ma > 0 else 1.0
                 
             ratio_spread = 1.0
-            if bench and bench in raw_data.columns.levels[0]:
-                bench_c = raw_data[bench]["Close"].dropna()
+            if bench and bench in raw_dict:
+                bench_c = raw_dict[bench]["Close"].dropna()
                 if len(bench_c) >= 2:
                     ratio_spread = round(float(curr_c / bench_c.iloc[-1]), 4)
                     
@@ -118,8 +135,8 @@ def run_daily_pipeline():
             ab_20_prev = 0
             
             for s in sub_stocks:
-                if s in raw_data.columns.levels[0]:
-                    s_close = raw_data[s]["Close"].dropna()
+                if s in raw_dict:
+                    s_close = raw_dict[s]["Close"].dropna()
                     if len(s_close) >= 2:
                         sc = s_close.iloc[-1]
                         sp = s_close.iloc[-2]
