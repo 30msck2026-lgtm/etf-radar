@@ -8,78 +8,21 @@ import os
 
 st.set_page_config(page_title="美股細分行業 ETF 深度監控與轉勢雷達", page_icon="📈", layout="wide")
 
-# 確保 data 資料夾存在
-data_dir = os.path.join(os.path.dirname(__file__), "data")
-os.makedirs(data_dir, exist_ok=True)
-DB_FILE = os.path.join(data_dir, "etf_system.db")
-
-def ensure_db_schema():
-    """自動確保資料庫與表格存在，防止空白資料庫引發 OperationalError"""
-    conn = sqlite3.connect(DB_FILE)
-    cur = conn.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS etf_metadata (
-        symbol TEXT PRIMARY KEY,
-        name TEXT,
-        sector TEXT,
-        sub_industry TEXT,
-        issuer TEXT,
-        benchmark TEXT
-    )""")
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS etf_holdings (
-        etf_symbol TEXT,
-        stock_symbol TEXT,
-        weight REAL,
-        updated_date TEXT,
-        PRIMARY KEY (etf_symbol, stock_symbol)
-    )""")
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS market_daily_metrics (
-        date TEXT,
-        symbol TEXT,
-        close_price REAL,
-        pct_change REAL,
-        dist_20ma REAL,
-        dist_50ma REAL,
-        dist_200ma REAL,
-        equal_weight_return REAL,
-        ew_vs_cap_spread REAL,
-        advancing_count INTEGER,
-        declining_count INTEGER,
-        advancing_ratio REAL,
-        above_20ma_ratio REAL,
-        above_50ma_ratio REAL,
-        momentum_5d REAL,
-        momentum_20d REAL,
-        volume_ratio REAL,
-        ratio_vs_benchmark REAL,
-        reversal_signal_flag TEXT,
-        PRIMARY KEY (date, symbol)
-    )""")
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS macro_breadth (
-        date TEXT,
-        index_name TEXT,
-        new_highs_count INTEGER,
-        new_lows_count INTEGER,
-        net_highs_lows INTEGER,
-        pct_above_50ma REAL,
-        pct_above_200ma REAL,
-        PRIMARY KEY (date, index_name)
-    )""")
-    conn.commit()
-    conn.close()
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_FILE = os.path.join(DATA_DIR, "etf_system.db")
 
 @st.cache_data(ttl=60)
-def load_all_dashboard_data():
-    ensure_db_schema()
+def load_dashboard_data():
     conn = sqlite3.connect(DB_FILE)
-    
     # 檢查是否有資料
-    date_df = pd.read_sql("SELECT MAX(date) as max_date FROM market_daily_metrics", conn)
-    latest_date = date_df["max_date"].iloc[0]
-    
+    try:
+        date_df = pd.read_sql("SELECT MAX(date) as max_date FROM market_daily_metrics", conn)
+        latest_date = date_df["max_date"].iloc[0]
+    except:
+        conn.close()
+        return None, None, None, None
+        
     if not latest_date:
         conn.close()
         return None, None, None, None
@@ -104,19 +47,11 @@ def load_all_dashboard_data():
     return df_metrics, df_macro, df_sectors, latest_date
 
 st.title("🏛️ 美股細分行業 ETF 深度監控與市場寬度雷達")
-df_metrics, df_macro, df_sectors, latest_date = load_all_dashboard_data()
+df_metrics, df_macro, df_sectors, latest_date = load_dashboard_data()
 
 if df_metrics is None or df_metrics.empty:
     st.warning("⚠️ 資料庫初始化完成，但尚未存有任何計算數據！")
-    st.info("""
-    **如何解決此問題（任選一種）：**
-    1. **在 GitHub 觸發自動運行**：
-       - 前往你的 GitHub 倉庫頁面。
-       - 點擊頂部的 **「Actions」** 分頁。
-       - 在左邊選中 **「Daily ETF Data Pipeline」**。
-       - 點擊右側的 **「Run workflow」** 藍色按鈕。
-       - 等待 3-5 分鐘跑完後，重新刷新此網頁即可正常顯示！
-    """)
+    st.info("請前往 GitHub Actions 頁面點擊【Run workflow】以執行首次全量計算。")
     st.stop()
 
 # ==========================================
@@ -167,18 +102,17 @@ st.markdown("---")
 # C. 轉勢雷達 (Reversal Radar)
 # ==========================================
 st.markdown("## 🚨 C. 轉勢雷達 (Reversal Radar)")
-st.caption("• **右側爆發**：站上 20MA 且內部站上 20MA 股票比例單日激增 20% 以上\n• **左側反轉**：連續 5 日超跌，且當日出現「成交量放大 + 等權率先翻紅 + 內部上漲比率 > 60%」")
-
 radar_alerts = df_metrics[df_metrics["reversal_signal_flag"] != "常規波動"]
 if not radar_alerts.empty:
     alert_cols = st.columns(min(len(radar_alerts), 4))
     for i, (_, r) in enumerate(radar_alerts.head(4).iterrows()):
         with alert_cols[i % 4]:
+            adv_txt = f"{r.get('advancing_count',0)}升 / {r.get('declining_count',0)}跌 (共{r.get('total_stocks_count',0)}隻)"
             st.error(f"⚡ **{r['symbol']} ({r['name']})**\n\n"
-                     f"• 觸發信號: **{r['reversal_signal_flag']}**\n"
-                     f"• ETF 漲跌: `{r['pct_change']:+.2f}%` | 內部等權: `{r['equal_weight_return']:+.2f}%`\n"
-                     f"• 距 20MA: `{r['dist_20ma']:+.2f}%` | 內部上漲佔比: `{r['advancing_ratio']}%`\n"
-                     f"• 成交量放量比: `{r['volume_ratio']}x`")
+                     f"• 信號: **{r['reversal_signal_flag']}**\n"
+                     f"• ETF 漲跌: `{r['pct_change']:+.2f}%` | 等權: `{r['equal_weight_return']:+.2f}%`\n"
+                     f"• 距 20MA: `{r['dist_20ma']:+.2f}%`\n"
+                     f"• 內部漲跌: **{adv_txt}** (佔比 `{r['advancing_ratio']}%`)")
 else:
     st.success("✅ 今日 Universe 內暫未發現極端轉勢異動，市場維持現有趨勢。")
 
@@ -189,9 +123,14 @@ st.markdown("---")
 # ==========================================
 st.markdown("## 🔬 B. 細分子行業篩選層 (Sub-Industry Screener)")
 
+# 側邊欄：美股標準 11 大板塊
 st.sidebar.header("🎯 複合條件篩選 (Screener Filters)")
-all_sectors = list(df_metrics["sector"].unique())
-sel_sectors = st.sidebar.multiselect("選擇大板塊 (Sector):", all_sectors, default=all_sectors)
+standard_11 = [
+    "資訊科技", "通信服務", "非必需消費", "必需消費", "醫療保健",
+    "金融", "工業", "能源", "原材料", "公用事業", "房地產"
+]
+available_sectors = [s for s in standard_11 if s in df_metrics["sector"].unique()]
+sel_sectors = st.sidebar.multiselect("選擇大板塊 (GICS 11 大分類):", available_sectors, default=available_sectors)
 
 sort_by = st.sidebar.selectbox("動量 / 均線排行 (Sort By):", [
     "當日升幅 (pct_change)", "5 日動量 (momentum_5d)", "20 日動量 (momentum_20d)",
@@ -220,39 +159,46 @@ sort_map = {
 }
 view_df = view_df.sort_values(by=sort_map[sort_by], ascending=False)
 
+# 建立專屬格式欄位：升跌家數與總股票數
+view_df["adv_dec_text"] = view_df.apply(
+    lambda r: f"{int(r.get('advancing_count',0))}升 / {int(r.get('declining_count',0))}跌 (共{int(r.get('total_stocks_count',0))}隻)", axis=1
+)
+
 disp_cols = [
     "symbol", "name", "sector", "sub_industry", "close_price",
-    "pct_change", "momentum_5d", "momentum_20d",
-    "equal_weight_return", "ew_vs_cap_spread",
+    "pct_change", "equal_weight_return", "ew_vs_cap_spread",
+    "adv_dec_text", "advancing_ratio",
     "dist_20ma", "dist_50ma", "dist_200ma",
-    "advancing_ratio", "above_20ma_ratio", "reversal_signal_flag"
+    "momentum_5d", "above_20ma_ratio", "reversal_signal_flag"
 ]
 rename_map = {
     "symbol": "代號", "name": "名稱", "sector": "大板塊", "sub_industry": "細分子行業",
-    "close_price": "收盤價", "pct_change": "當日升幅", "momentum_5d": "5日動量", "momentum_20d": "20日動量",
-    "equal_weight_return": "等權升幅", "ew_vs_cap_spread": "等權差額",
+    "close_price": "收盤價", "pct_change": "當日升幅", "equal_weight_return": "等權升幅", "ew_vs_cap_spread": "等權差額",
+    "adv_dec_text": "內部升跌(隻數/總數)", "advancing_ratio": "上漲佔比%",
     "dist_20ma": "距20MA", "dist_50ma": "距50MA", "dist_200ma": "距200MA",
-    "advancing_ratio": "內部上漲家數%", "above_20ma_ratio": "站上20MA%", "reversal_signal_flag": "轉勢信號"
+    "momentum_5d": "5日動量", "above_20ma_ratio": "站上20MA%", "reversal_signal_flag": "轉勢信號"
 }
 
 def style_screener(st_df):
     return st_df.format({
         "收盤價": "${:.2f}",
         "當日升幅": "{:+.2f}%",
-        "5日動量": "{:+.2f}%",
-        "20日動量": "{:+.2f}%",
         "等權升幅": "{:+.2f}%",
         "等權差額": "{:+.2f}%",
+        "上漲佔比%": "{:.1f}%",
         "距20MA": "{:+.2f}%",
         "距50MA": "{:+.2f}%",
         "距200MA": "{:+.2f}%",
-        "內部上漲家數%": "{:.1f}%",
+        "5日動量": "{:+.2f}%",
         "站上20MA%": "{:.1f}%"
     })
 
 styled_table = style_screener(view_df[disp_cols].rename(columns=rename_map).style)
-st.dataframe(styled_table, use_container_width=True, height=400)
+st.dataframe(styled_table, use_container_width=True, height=420)
 
+# ==========================================
+# 散佈圖與全量持股穿透
+# ==========================================
 st.markdown("---")
 st.subheader("💡 內外背離雷達圖 (ETF 當日升幅 vs 等權升幅)")
 fig_scat = px.scatter(
@@ -261,7 +207,7 @@ fig_scat = px.scatter(
     text="symbol", color="advancing_ratio",
     color_continuous_scale="RdYlGn",
     size=np.abs(view_df["ew_vs_cap_spread"]) + 2,
-    hover_data=["name", "sub_industry", "reversal_signal_flag", "momentum_5d"],
+    hover_data=["name", "sub_industry", "adv_dec_text", "reversal_signal_flag"],
     labels={"pct_change": "ETF 當日升幅 (%)", "equal_weight_return": "內部等權升幅 (%)"}
 )
 min_v = min(view_df["pct_change"].min(), view_df["equal_weight_return"].min(), -2)
@@ -273,11 +219,15 @@ st.plotly_chart(fig_scat, use_container_width=True)
 
 st.markdown("---")
 st.subheader("🔎 單一細分 ETF 成分股持股穿透 (Holdings Drill-Down)")
-target_etf = st.selectbox("選擇要穿透的 ETF:", view_df["symbol"].tolist())
+target_etf = st.selectbox("選擇要穿透全量持股的 ETF:", view_df["symbol"].tolist())
 if target_etf:
     conn = sqlite3.connect(DB_FILE)
     h_df = pd.read_sql(f"SELECT stock_symbol, weight, updated_date FROM etf_holdings WHERE etf_symbol='{target_etf}' ORDER BY weight DESC", conn)
     conn.close()
     if not h_df.empty:
-        st.write(f"**{target_etf}** 底層持股名單 (共 {len(h_df)} 隻，顯示前 25 隻)：")
-        st.dataframe(h_df.head(25).rename(columns={"stock_symbol": "成分股代號", "weight": "權重", "updated_date": "持股更新日期"}), use_container_width=True)
+        st.write(f"**{target_etf}** 底層持股清單（已完整展示該 ETF 的全體 **{len(h_df)} 隻**成分股）：")
+        st.dataframe(
+            h_df.rename(columns={"stock_symbol": "成分股代號", "weight": "持股權重", "updated_date": "持股更新日期"}),
+            use_container_width=True,
+            height=350
+        )
