@@ -12,13 +12,15 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_FILE = os.path.join(DATA_DIR, "etf_system.db")
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10)
 def load_dashboard_data():
+    if not os.path.exists(DB_FILE):
+        return None, None, None, None
     conn = sqlite3.connect(DB_FILE)
     try:
         date_df = pd.read_sql("SELECT MAX(date) as max_date FROM market_daily_metrics", conn)
         latest_date = date_df["max_date"].iloc[0]
-    except:
+    except Exception as e:
         conn.close()
         return None, None, None, None
         
@@ -46,6 +48,14 @@ def load_dashboard_data():
     return df_metrics, df_macro, df_sectors, latest_date
 
 st.title("🏛️ 美股細分行業 ETF 深度監控與市場寬度雷達")
+
+# 頂部控制欄：提供強制清除快取按鈕
+top_col1, top_col2 = st.columns([8, 2])
+with top_col2:
+    if st.button("🔄 強制清除快取並重新載入"):
+        st.cache_data.clear()
+        st.rerun()
+
 df_metrics, df_macro, df_sectors, latest_date = load_dashboard_data()
 
 if df_metrics is None or df_metrics.empty:
