@@ -1,4 +1,4 @@
-# 美股標準 GICS 11 大板塊細分行業 ETF 映射表
+# 美股標準 GICS 11 大板塊細分行業 ETF 映射表 (完全齊全 11 個標準 Sector)
 ETF_UNIVERSE = [
     # 1. 資訊科技 (Information Technology - XLK)
     {"ticker": "SMH", "name": "半導體 (VanEck)", "sector": "資訊科技", "industry": "半導體", "issuer": "VanEck", "benchmark": "XLK"},
@@ -22,7 +22,8 @@ ETF_UNIVERSE = [
     {"ticker": "AWAY", "name": "旅遊科技零售", "sector": "非必需消費", "industry": "旅遊零售", "issuer": "ETFMG", "benchmark": "XLY"},
 
     # 4. 必需消費 (Consumer Staples - XLP)
-    {"ticker": "KXI", "name": "全球必需消費", "sector": "必需消費", "industry": "民生必需", "issuer": "iShares", "benchmark": "XLP"},
+    {"ticker": "XLP", "name": "必需消費主要指數", "sector": "必需消費", "industry": "民生必需", "issuer": "SPDR", "benchmark": "SPY"},
+    {"ticker": "KXI", "name": "全球必需消費", "sector": "必需消費", "industry": "生活消費", "issuer": "iShares", "benchmark": "XLP"},
     {"ticker": "PBJ", "name": "食品與飲料", "sector": "必需消費", "industry": "食品飲品", "issuer": "Invesco", "benchmark": "XLP"},
 
     # 5. 醫療保健 (Healthcare - XLV)
@@ -70,8 +71,7 @@ ETF_UNIVERSE = [
     {"ticker": "VNQ", "name": "全美房地產REITs", "sector": "房地產", "industry": "房產信託", "issuer": "Vanguard", "benchmark": "XLRE"}
 ]
 
-# GICS 11 大板塊列表
-GICS_11_SECTORS = [
+STANDARD_11_SECTORS = [
     "資訊科技", "通信服務", "非必需消費", "必需消費", "醫療保健",
     "金融", "工業", "能源", "原材料", "公用事業", "房地產"
 ]

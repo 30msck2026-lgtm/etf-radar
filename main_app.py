@@ -15,7 +15,6 @@ DB_FILE = os.path.join(DATA_DIR, "etf_system.db")
 @st.cache_data(ttl=60)
 def load_dashboard_data():
     conn = sqlite3.connect(DB_FILE)
-    # 檢查是否有資料
     try:
         date_df = pd.read_sql("SELECT MAX(date) as max_date FROM market_daily_metrics", conn)
         latest_date = date_df["max_date"].iloc[0]
@@ -107,7 +106,10 @@ if not radar_alerts.empty:
     alert_cols = st.columns(min(len(radar_alerts), 4))
     for i, (_, r) in enumerate(radar_alerts.head(4).iterrows()):
         with alert_cols[i % 4]:
-            adv_txt = f"{r.get('advancing_count',0)}升 / {r.get('declining_count',0)}跌 (共{r.get('total_stocks_count',0)}隻)"
+            t_cnt = int(r.get('total_stocks_count', 0))
+            if t_cnt == 0:
+                t_cnt = int(r.get('advancing_count', 0)) + int(r.get('declining_count', 0))
+            adv_txt = f"{int(r.get('advancing_count',0))}升 / {int(r.get('declining_count',0))}跌 (共{t_cnt}隻)"
             st.error(f"⚡ **{r['symbol']} ({r['name']})**\n\n"
                      f"• 信號: **{r['reversal_signal_flag']}**\n"
                      f"• ETF 漲跌: `{r['pct_change']:+.2f}%` | 等權: `{r['equal_weight_return']:+.2f}%`\n"
@@ -123,14 +125,13 @@ st.markdown("---")
 # ==========================================
 st.markdown("## 🔬 B. 細分子行業篩選層 (Sub-Industry Screener)")
 
-# 側邊欄：美股標準 11 大板塊
+# 側邊欄：標準美股 GICS 11 大板塊 (嚴格 11 個標準分類)
 st.sidebar.header("🎯 複合條件篩選 (Screener Filters)")
-standard_11 = [
+STANDARD_11_SECTORS = [
     "資訊科技", "通信服務", "非必需消費", "必需消費", "醫療保健",
     "金融", "工業", "能源", "原材料", "公用事業", "房地產"
 ]
-available_sectors = [s for s in standard_11 if s in df_metrics["sector"].unique()]
-sel_sectors = st.sidebar.multiselect("選擇大板塊 (GICS 11 大分類):", available_sectors, default=available_sectors)
+sel_sectors = st.sidebar.multiselect("選擇大板塊 (GICS 11 大標準分類):", STANDARD_11_SECTORS, default=STANDARD_11_SECTORS)
 
 sort_by = st.sidebar.selectbox("動量 / 均線排行 (Sort By):", [
     "當日升幅 (pct_change)", "5 日動量 (momentum_5d)", "20 日動量 (momentum_20d)",
@@ -159,10 +160,15 @@ sort_map = {
 }
 view_df = view_df.sort_values(by=sort_map[sort_by], ascending=False)
 
-# 建立專屬格式欄位：升跌家數與總股票數
-view_df["adv_dec_text"] = view_df.apply(
-    lambda r: f"{int(r.get('advancing_count',0))}升 / {int(r.get('declining_count',0))}跌 (共{int(r.get('total_stocks_count',0))}隻)", axis=1
-)
+def build_breadth_text(r):
+    t_cnt = int(r.get('total_stocks_count', 0))
+    a_cnt = int(r.get('advancing_count', 0))
+    d_cnt = int(r.get('declining_count', 0))
+    if t_cnt == 0:
+        t_cnt = a_cnt + d_cnt
+    return f"{a_cnt}升 / {d_cnt}跌 (共{t_cnt}隻)"
+
+view_df["adv_dec_text"] = view_df.apply(build_breadth_text, axis=1)
 
 disp_cols = [
     "symbol", "name", "sector", "sub_industry", "close_price",

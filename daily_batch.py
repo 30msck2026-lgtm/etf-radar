@@ -66,7 +66,7 @@ def run_daily_pipeline():
     stock_symbols = holdings_df["stock_symbol"].dropna().unique().tolist()
     download_pool = list(set(etf_symbols + benchmarks + stock_symbols))
     
-    print(f"[*] 批次拉取全量去重標的 ({len(download_pool)} 隻)...")
+    print(f"[*] 批次拉取全量去重標的 ({len(download_pool)} 隻股票與 ETF 行情)...")
     raw_data = yf.download(download_pool, period="15mo", interval="1d", group_by="ticker", auto_adjust=True, progress=False)
     
     cur = conn.cursor()
@@ -120,32 +120,34 @@ def run_daily_pipeline():
             for s in sub_stocks:
                 if s in raw_data.columns.levels[0]:
                     s_close = raw_data[s]["Close"].dropna()
-                    if len(s_close) >= 22:
+                    if len(s_close) >= 2:
                         sc = s_close.iloc[-1]
                         sp = s_close.iloc[-2]
                         stock_pcts.append(((sc - sp) / sp) * 100.0)
                         
-                        m20_curr = s_close.rolling(20).mean().iloc[-1]
-                        m20_prev = s_close.rolling(20).mean().iloc[-2]
-                        if sc > m20_curr:
-                            ab_20 += 1
-                        if sp > m20_prev:
-                            ab_20_prev += 1
+                        if len(s_close) >= 22:
+                            m20_curr = s_close.rolling(20).mean().iloc[-1]
+                            m20_prev = s_close.rolling(20).mean().iloc[-2]
+                            if sc > m20_curr:
+                                ab_20 += 1
+                            if sp > m20_prev:
+                                ab_20_prev += 1
                         if len(s_close) >= 50 and sc > s_close.rolling(50).mean().iloc[-1]:
                             ab_50 += 1
                             
             if stock_pcts:
                 total_cnt = len(stock_pcts)
-                ew_return = round(float(np.mean(stock_pcts)), 2)
-                adv_cnt = int(np.sum(np.array(stock_pcts) > 0))
-                dec_cnt = int(np.sum(np.array(stock_pcts) < 0))
+                arr = np.array(stock_pcts)
+                adv_cnt = int(np.sum(arr > 0))
+                dec_cnt = int(np.sum(arr < 0))
+                ew_return = round(float(np.mean(arr)), 2)
                 adv_ratio = round(adv_cnt / total_cnt * 100.0, 1)
                 above_20_ratio = round(ab_20 / total_cnt * 100.0, 1)
                 above_20_prev_ratio = round(ab_20_prev / total_cnt * 100.0, 1)
                 above_50_ratio = round(ab_50 / total_cnt * 100.0, 1)
                 ab_20_jump = above_20_ratio - above_20_prev_ratio
             else:
-                total_cnt = 0
+                total_cnt = len(sub_stocks)
                 ew_return = pct_change
                 adv_cnt, dec_cnt = 0, 0
                 adv_ratio, above_20_ratio, above_50_ratio = 50.0, 50.0, 50.0

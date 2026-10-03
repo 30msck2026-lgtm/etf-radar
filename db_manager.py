@@ -12,7 +12,6 @@ def init_database():
     conn = get_connection()
     cur = conn.cursor()
     
-    # 1. etf_metadata
     cur.execute("""
     CREATE TABLE IF NOT EXISTS etf_metadata (
         symbol TEXT PRIMARY KEY,
@@ -23,7 +22,6 @@ def init_database():
         benchmark TEXT
     )""")
     
-    # 2. etf_holdings
     cur.execute("""
     CREATE TABLE IF NOT EXISTS etf_holdings (
         etf_symbol TEXT,
@@ -33,7 +31,6 @@ def init_database():
         PRIMARY KEY (etf_symbol, stock_symbol)
     )""")
     
-    # 3. market_daily_metrics
     cur.execute("""
     CREATE TABLE IF NOT EXISTS market_daily_metrics (
         date TEXT,
@@ -59,7 +56,6 @@ def init_database():
         PRIMARY KEY (date, symbol)
     )""")
     
-    # 4. macro_breadth
     cur.execute("""
     CREATE TABLE IF NOT EXISTS macro_breadth (
         date TEXT,
