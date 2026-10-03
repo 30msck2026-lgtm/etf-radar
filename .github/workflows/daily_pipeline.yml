@@ -25,8 +25,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 檢查並初始化資料庫 (Init DB & Holdings)
+      - name: 建立數據目錄並初始化資料庫 (Init DB & Holdings)
         run: |
+          mkdir -p data
           python db_manager.py
           python update_holdings.py
 
@@ -38,6 +39,6 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add data/etf_system.db
+          git add -f data/etf_system.db
           git diff-index --quiet HEAD || git commit -m "自動更新: 盤後市場寬度與 ETF 指標 [$(date +'%Y-%m-%d')]"
           git push
